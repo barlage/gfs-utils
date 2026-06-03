@@ -97,7 +97,8 @@
       real,dimension(npoint,2+levs*3):: grids
       real,dimension(npoint) :: rlat,rlon,pmsl,ps,psn,elevstn
       real,dimension(im*jm) :: dum1d,dum1d2
-      real,dimension(im,jm) :: gdlat, hgt, gdlon
+      real,dimension(im,jm) :: gdlat, hgt, gdlon, shdmax, rvgtyp
+      integer,dimension(im,jm) :: ivgtyp
       real,dimension(im,jm,15) :: dum2d
       real,dimension(im,jm,levs) :: t3d, q3d, uh, vh,omega3d
       real,dimension(im,jm,levs) :: delpz
@@ -119,6 +120,7 @@
       real :: rdum
       integer :: n3dfercld,iseedl
       integer :: istat(npoint)
+      integer :: land_model_flag
       logical :: trace
 !     logical, parameter :: debugprint=.true.
       logical, parameter :: debugprint=.false.
@@ -464,6 +466,45 @@
         if(debugprint)
      +   print*,'sample 2m Q= ',dum2d(im/2,jm/4,3),dum2d(im/2,jm/3,3),
      +          dum2d(im/2,jm/2,3)
+
+! GFSv17 adjustment for 2m Q, only for NoahMP land model
+
+      if (fformat == 'netcdf') then
+        error = nf90_get_att(ncid, nf90_global, "landsfcmdl", land_model_flag)
+      endif
+
+      if (land_model_flag==2) then
+
+        if (fformat == 'netcdf') then
+          VarName='shdmax'
+          Zreverse='no'
+           call read_netcdf(ncid,im,jm,1,VarName,shdmax,
+     &           Zreverse,error)
+          if (error /= 0) print*,'shdmax not found'
+        endif
+
+        if (fformat == 'netcdf') then
+          VarName='vtype'
+          Zreverse='no'
+          call read_netcdf(ncid,im,jm,1,VarName,rvgtyp,
+     &           Zreverse,error)
+          if (error /= 0) print*,'vtype not found'
+          ivgtyp = nint(rvgtyp)
+        endif
+
+        do j=1,jm
+          do i=1,im
+           if(lwmask(i,j) == 1) then  ! only for land grids
+            if(ivgtyp(i,j) == 13 .or. ivgtyp(i,j) == 16 .or. ivgtyp(i,j) == 20) then
+              dum2d(i,j,3) = q3d(i,j,levs)
+            elseif(ivgtyp(i,j) /= 15) then
+              dum2d(i,j,3) = shdmax(i,j) * dum2d(i,j,3) + (1.0 - shdmax(i,j)) * q3d(i,j,levs)
+            end if
+           end if
+          enddo
+        enddo
+
+     endif  ! land_model_flag==2
 
 ! U10
       if (fformat == 'netcdf') then
